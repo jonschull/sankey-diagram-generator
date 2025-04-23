@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sankey Diagram Generator</title>
+    <!-- jQuery UI for draggable functionality -->
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <!-- Mermaid for the Sankey diagram -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .active-button {
+            background-color: #e74c3c;
+        }
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .panel {
+            flex: 1;
+            padding: 20px;
+            overflow: auto;
+            box-sizing: border-box;
+        }
+        .left-panel {
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+        }
+        .right-panel {
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+        }
+        #sankey-options {
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+        }
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .option-group {
+            margin-bottom: 10px;
+        }
+        .option-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .option-group select, 
+        .option-group input {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .option-group input[type="number"] {
+            width: 80px;
+        }
+        .option-group input[type="color"] {
+            width: 40px;
+            height: 30px;
+            padding: 0;
+            cursor: pointer;
+        }
+        .color-picker-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #mermaid-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            min-height: 500px;
+        }
+        .mermaid {
+            width: 100%;
+            max-width: 100%;
+            min-height: 500px;
+        }
+        .mermaid-wrapper {
+            width: 100%;
+            height: 100%;
+            min-height: 500px;
+        }
+        .table-controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        #editable-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        #editable-table th, #editable-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            position: relative;
+        }
+        #editable-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+            text-align: left;
+            position: relative;
+            padding-top: 30px; /* Make room for the column controls */
+        }
+        #editable-table tr {
+            cursor: move;
+        }
+        #editable-table tr.selected {
+            background-color: #e3f2fd !important;
+        }
+        #editable-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        #editable-table tr:hover {
+            background-color: #f1f1f1;
+        }
+        .editable {
+            min-width: 100px;
+            min-height: 20px;
+        }
+        .editable a {
+            color: #0066cc;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .editable a:hover {
+            text-decoration: none;
+        }
+        .column-controls {
+            display: none; /* Hide the separate column controls section */
+        }
+        /* Column control buttons inside table headers */
+        .header-controls {
+            position: absolute;
+            top: 2px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 5px;
+        }
+        .header-button {
+            background-color: #f2f2f2;
+            border: 1px solid #ddd;
+            padding: 2px 5px;
+            cursor: pointer;
+            font-size: 12px;
+            border-radius: 3px;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header-button:hover {
+            background-color: #e0e0e0;
+        }
+        .header-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 300px;
+        }
+        .modal-content input {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            box-sizing: border-box;
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .info-panel {
+            background-color: #e7f3fe;
+            border-left: 6px solid #2196F3;
+            padding: 10px;
+            margin-bottom: 15px;
+        }
+        .file-input {
+            display: none;
+        }
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+            .panel {
+                flex: none;
+                height: 50vh;
+            }
+            .left-panel {
+                border-right: none;
+                border-bottom: 1px solid #ddd;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Sankey Diagram Generator</h1>
+        <div class="header-buttons">
+            <button id="export-data" class="button">Export Mermaid</button>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <!-- Left Panel - Editable Table -->
+        <div class="panel left-panel">
+            <div class="info-panel">
+                <p>Enter your data in the format: Country, City/Town, Person, Project, Organization. Each row will be processed to create Sankey diagram connections.</p>
+                <p><strong>Tips:</strong> Use the arrow buttons in the column headers to move columns left or right. Drag rows to reorder them. Click cells to edit content.</p>
+                <p><strong>Links:</strong> Add links using the format [text](url) - for example: [Google](https://google.com)</p>
+                <p><strong>Diagram Options:</strong> Adjust the Sankey diagram appearance using the controls in the right panel. Changes update in real-time.</p>
+                <p><strong>Buttons:</strong> 
+                   "Export Mermaid" saves the diagram code as a standard Mermaid file, 
+                   "Save CSV" exports your table data as a CSV file.
+                </p>
+            </div>
+            <div class="table-controls">
+                <button id="add-row" class="button">Add Row</button>
+                <button id="delete-row" class="button">Delete Row</button>
+                <button id="rename-column" class="button">Rename Column</button>
+                <button id="clear-table" class="button">Clear Table</button>
+                <button id="load-sample" class="button">Load Sample Data</button>
+                <button id="load-csv-btn" class="button">Load CSV</button>
+                <button id="export-csv" class="button">Save CSV</button>
+                <input type="file" id="csv-file-input" class="file-input" accept=".csv">
+            </div>
+            
+            <div id="table-container">
+                <table id="editable-table">
+                    <thead>
+                        <tr id="header-row">
+                            <th data-name="Country">
+                                <div class="header-controls">
+                                    <button class="header-button move-left" data-index="0" disabled>&larr;</button>
+                                    <button class="header-button move-right" data-index="0">&rarr;</button>
+                                </div>
+                                Country
+                            </th>
+                            <th data-name="City/Town">
+                                <div class="header-controls">
+                                    <button class="header-button move-left" data-index="1">&larr;</button>
+                                    <button class="header-button move-right" data-index="1">&rarr;</button>
+                                </div>
+                                City/Town
+                            </th>
+                            <th data-name="Person">
+                                <div class="header-controls">
+                                    <button class="header-button move-left" data-index="2">&larr;</button>
+                                    <button class="header-button move-right" data-index="2">&rarr;</button>
+                                </div>
+                                Person
+                            </th>
+                            <th data-name="Project">
+                                <div class="header-controls">
+                                    <button class="header-button move-left" data-index="3">&larr;</button>
+                                    <button class="header-button move-right" data-index="3">&rarr;</button>
+                                </div>
+                                Project
+                            </th>
+                            <th data-name="Organization">
+                                <div class="header-controls">
+                                    <button class="header-button move-left" data-index="4">&larr;</button>
+                                    <button class="header-button move-right" data-index="4" disabled>&rarr;</button>
+                                </div>
+                                Organization
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Table rows will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Right Panel - Sankey Diagram -->
+        <div class="panel right-panel">
+            <div id="sankey-options">
+                <h3>Sankey Diagram Options</h3>
+                <div class="options-grid">
+                    <div class="option-group">
+                        <label for="node-alignment">Node Alignment</label>
+                        <select id="node-alignment">
+                            <option value="justify" selected>Justify</option>
+                            <option value="left">Left</option>
+                            <option value="right">Right</option>
+                            <option value="center">Center</option>
+                        </select>
+                    </div>
+                    <div class="option-group">
+                        <label for="show-values">Show Values</label>
+                        <select id="show-values">
+                            <option value="false" selected>No</option>
+                            <option value="true">Yes</option>
+                        </select>
+                    </div>
+                    <div class="option-group">
+                        <label for="diagram-scale">Diagram Scale (%)</label>
+                        <input type="number" id="diagram-scale" min="50" max="200" value="100" step="10">
+                    </div>
+                </div>
+                <div class="info-panel" style="margin-top: 10px; font-size: 0.9em; background-color: #f8f9fa; padding: 8px; border-radius: 4px;">
+                    <p><strong>Note:</strong> Mermaid's Sankey implementation has limited options. Only node alignment and value display can be customized.</p>
+                </div>
+                <div style="margin-top: 15px; display: flex; gap: 10px;">
+                    <button id="save-options" class="button">Save Options</button>
+                    <button id="load-options" class="button">Load Options</button>
+                    <button id="fit-width" class="button" title="Scale diagram to fit available width">Fit to Width</button>
+                    <input type="file" id="options-file-input" class="file-input" accept=".json" style="display: none;">
+                </div>
+            </div>
+            <div id="mermaid-container">
+                <pre class="mermaid">
+sankey-beta
+Country, City/Town, 10
+City/Town, Person, 10
+Person, Project, 10
+Project, Organization, 10
+                </pre>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Rename Column Modal -->
+    <div id="rename-modal" class="modal">
+        <div class="modal-content">
+            <h3>Rename Column</h3>
+            <select id="column-select">
+                <option value="0">Country</option>
+                <option value="1">City/Town</option>
+                <option value="2">Person</option>
+                <option value="3">Project</option>
+                <option value="4">Organization</option>
+            </select>
+            <input type="text" id="new-column-name" placeholder="New column name">
+            <div class="modal-buttons">
+                <button id="cancel-rename" class="button" style="background-color: #f44336;">Cancel</button>
+                <button id="confirm-rename" class="button">Rename</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize mermaid with default settings
+        let sankeySettings = {
+            nodeWidth: 40,
+            nodePadding: 60,
+            curvature: 0.5,
+            nodeAlignment: 'justify',
+            showValues: false,
+            diagramScale: 100
+        };
+        
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: { useMaxWidth: false },
+            sankey: { 
+                useMaxWidth: true,
+                nodeWidth: sankeySettings.nodeWidth,
+                nodePadding: sankeySettings.nodePadding,
+                curvature: sankeySettings.curvature,
+                nodeAlignment: sankeySettings.nodeAlignment,
+                showValues: sankeySettings.showValues
+            }
+        });
+
+        // Sample data from makeMermaid.py
+        const sampleData = [
+            ["Uganda", "Nakivale", "Marius", "Biochar", "Umoja"],
+            ["", "", "", "Biochar", "EcoSystem Regeneration"],
+            ["Uganda", "Nakivale", "Kalombo", "RED", "AYISD"],
+            ["Uganda", "Nakivale", "Kalombo", "Woodlot", "AYISD"],
+            ["Uganda", "Nakivale", "Samuel", "", "AYISD"],
+            ["Uganda", "Nakivale", "Marius", "Biogen", "Umoja"],
+            ["Uganda", "Nakivale", "Marius", "Permaculture", "Umoja"],
+            ["Uganda", "Jinja", "Edward", "Hamlet", "ERA"],
+            ["Uganda", "Jinja", "Edward", "Hamlet", "WUN"],
+            ["Uganda", "Jinja", "Edward", "Training", "ERA"],
+            ["Uganda", "Nakivale", "Ansima", "Training", "Folona"],
+            ["Uganda", "Mubende", "Muhange", "MicroLoans", "Fliptown"],
+            ["Senegal", "Dakar", "Ousmane", "Training", "REDES"],
+            ["Uganda", "Jinja", "Leonce", "Minelands", "Save he Planet"],
+            ["DRC", "Bukavu", "Bulonza", "Training", "On Time Aid"],
+            ["DRC", "Goma", "Leonce", "Minelands", "Save the Planet"],
+            ["DRC", "Goma-Bujumbura", "Climbien", "social projet", "Oursfera Group"],
+            ["Nigeria", "Taraba", "Dayo", "Govt", "ICCREA"],
+            ["Kenya", "Nairobi", "Leonard", "Comms", "We4Climate"],
+            ["Kenya", "Nairobi", "Leonard", "Comms", "ERAa"],
+            ["Kenya", "Oyugis", "Moses", "Training", "GFCA"]
+        ];
+
+        $(document).ready(function() {
+            // Set initial values for Sankey options inputs
+            $("#node-width").val(sankeySettings.nodeWidth);
+            $("#node-padding").val(sankeySettings.nodePadding);
+            $("#curvature").val(sankeySettings.curvature);
+            $("#node-alignment").val(sankeySettings.nodeAlignment);
+            $("#show-values").val(sankeySettings.showValues);
+            $("#diagram-scale").val(sankeySettings.diagramScale);
+            
+            // Load data from AfricaData.csv on page load
+            loadCSVFromFile('AfricaData.csv');
+            
+            // Initialize row sorting
+            initTableRowSorting();
+            
+            // Initialize column controls
+            initColumnControls();
+            
+            // Make cells editable
+            $("#editable-table").on("click", "td.editable", function(e) {
+                // Don't make cell editable if clicking on a link
+                if ($(e.target).is('a')) {
+                    return;
+                }
+                
+                // Get the original Markdown content if it exists
+                const markdownContent = $(this).attr('data-markdown');
+                
+                $(this).attr("contenteditable", "true");
+                
+                // If we have stored Markdown content, restore it for editing
+                if (markdownContent) {
+                    $(this).text(markdownContent);
+                }
+                
+                $(this).focus();
+                
+                // Mark the row as selected
+                $("#editable-table tbody tr").removeClass("selected");
+                $(this).closest("tr").addClass("selected");
+            });
+            
+            // Handle cell blur and update diagram
+            $("#editable-table").on("blur", "td.editable", function() {
+                $(this).attr("contenteditable", "false");
+                
+                // Get the current text content (which may contain Markdown links)
+                const currentContent = $(this).text().trim();
+                
+                // Store the Markdown content for future editing
+                if (/\[([^\]]+)\]\(([^)]+)\)/g.test(currentContent)) {
+                    $(this).attr('data-markdown', currentContent);
+                    
+                    // Convert Markdown links to HTML links for display
+                    let displayContent = currentContent.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+                    $(this).html(displayContent);
+                } else {
+                    // If no Markdown links, just use the text
+                    $(this).removeAttr('data-markdown');
+                }
+                
+                // Update the diagram with current settings
+                redrawSankeyDiagram();
+                
+                // Keep the row selected
+                $(this).closest("tr").addClass("selected");
+            });
+            
+            // Process links in cell content
+            function processLinksInCell(cell) {
+                // Store the original content with Markdown links
+                const originalContent = cell.text();
+                
+                // Check if the content contains Markdown links
+                const hasMarkdownLinks = /\[([^\]]+)\]\(([^)]+)\)/g.test(originalContent);
+                
+                if (hasMarkdownLinks) {
+                    // Store the Markdown format in a data attribute for editing
+                    cell.attr('data-markdown', originalContent);
+                    
+                    // Replace Markdown links with HTML links for display
+                    let displayContent = originalContent.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+                    cell.html(displayContent);
+                }
+            }
+            
+            // Add row button
+            $("#add-row").click(function() {
+                var columnCount = $("#editable-table thead th").length;
+                var newRow = $("<tr>");
+                
+                for (var i = 0; i < columnCount; i++) {
+                    newRow.append('<td class="editable" contenteditable="true"></td>');
+                }
+                
+                // Insert at the top of the table instead of the bottom
+                $("#editable-table tbody").prepend(newRow);
+                
+                // Select the new row
+                $("#editable-table tbody tr").removeClass("selected");
+                newRow.addClass("selected");
+                
+                // Focus on the first cell of the new row
+                newRow.find("td:first").focus();
+                
+                initTableRowSorting(); // Reinitialize row sorting
+            });
+
+            // Delete row button
+            $("#delete-row").click(function() {
+                // Check if any row is selected
+                const selectedRow = $("#editable-table tbody tr.selected");
+                
+                if (selectedRow.length > 0) {
+                    // Delete the selected row
+                    selectedRow.remove();
+                } else if ($("#editable-table tbody tr").length > 1) {
+                    // If no row is selected, delete the last row (fallback behavior)
+                    $("#editable-table tbody tr:last").remove();
+                } else {
+                    alert("Cannot delete the last row!");
+                    return;
+                }
+                
+                // Update the diagram with current settings
+                redrawSankeyDiagram();
+            });
+            
+            // Clear table button
+            $("#clear-table").click(function() {
+                if (confirm("Are you sure you want to clear all data?")) {
+                    $("#editable-table tbody").empty();
+                    
+                    // Add one empty row
+                    var columnCount = $("#editable-table thead th").length;
+                    var newRow = $("<tr>");
+                    
+                    for (var i = 0; i < columnCount; i++) {
+                        newRow.append('<td class="editable" contenteditable="true"></td>');
+                    }
+                    
+                    $("#editable-table tbody").append(newRow);
+                    initTableRowSorting(); // Reinitialize row sorting
+                    // Update the diagram with current settings
+                    redrawSankeyDiagram();
+                }
+            });
+            
+            // Load sample data button
+            $("#load-sample").click(function() {
+                if (confirm("This will replace your current data with sample data. Continue?")) {
+                    loadSampleData();
+                    initTableRowSorting(); // Reinitialize row sorting
+                    // Update the diagram with current settings
+                    redrawSankeyDiagram();
+                }
+            });
+            
+            // Load CSV button
+            $("#load-csv-btn").click(function() {
+                $("#csv-file-input").click();
+            });
+            
+            // Handle CSV file selection
+            $("#csv-file-input").change(function(e) {
+                var file = e.target.files[0];
+                if (file) {
+                    if (confirm("This will replace your current data with the CSV data. Continue?")) {
+                        parseCSVFile(file);
+                    }
+                }
+            });
+            
+            // Rename column button
+            $("#rename-column").click(function() {
+                updateColumnSelectOptions();
+                $("#rename-modal").css("display", "block");
+            });
+            
+            // Cancel rename
+            $("#cancel-rename").click(function() {
+                $("#rename-modal").css("display", "none");
+            });
+            
+            // Confirm rename
+            $("#confirm-rename").click(function() {
+                var columnIndex = $("#column-select").val();
+                var newName = $("#new-column-name").val().trim();
+                
+                if (newName) {
+                    var th = $("#editable-table thead th").eq(columnIndex);
+                    
+                    // Keep the header controls when renaming
+                    const headerControls = th.find('.header-controls').clone();
+                    th.html(newName);
+                    th.prepend(headerControls);
+                    
+                    th.attr("data-name", newName);
+                    
+                    // Reinitialize column controls after renaming
+                    initColumnControls();
+                    
+                    // Update the column select dropdown
+                    updateColumnSelectOptions();
+                    
+                    // Clear the input
+                    $("#new-column-name").val("");
+                    
+                    // Hide the modal
+                    $("#rename-modal").css("display", "none");
+                    
+                    // Update the diagram with current settings
+                    redrawSankeyDiagram();
+                } else {
+                    alert("Please enter a column name");
+                }
+            });
+            
+            // Initialize table row sorting
+            function initTableRowSorting() {
+                $("#editable-table tbody").sortable({
+                    helper: function(e, tr) {
+                        var $originals = tr.children();
+                        var $helper = tr.clone();
+                        $helper.children().each(function(index) {
+                            $(this).width($originals.eq(index).width());
+                        });
+                        return $helper;
+                    },
+                    start: function(e, ui) {
+                        // Mark the row as selected when starting to drag
+                        $("#editable-table tbody tr").removeClass("selected");
+                        ui.item.addClass("selected");
+                    },
+                    update: function() {
+                        // Auto-update the diagram when rows are reordered
+                        // Update the diagram with current settings
+                        redrawSankeyDiagram();
+                    }
+                }).disableSelection();
+                
+                // Add click handler for row selection
+                $("#editable-table tbody").on("click", "tr", function(e) {
+                    // Only select the row if the click wasn't on an editable cell (that's handled separately)
+                    if (!$(e.target).hasClass("editable")) {
+                        $("#editable-table tbody tr").removeClass("selected");
+                        $(this).addClass("selected");
+                    }
+                });
+            }
+            
+            // Update column controls
+            function updateColumnControls() {
+                // Update the move buttons in the header
+                $("#editable-table thead th").each(function(index) {
+                    const totalColumns = $("#editable-table thead th").length;
+                    
+                    // Get the control buttons
+                    const leftBtn = $(this).find('.move-left');
+                    const rightBtn = $(this).find('.move-right');
+                    
+                    // Update data-index attributes and disabled state
+                    leftBtn.attr('data-index', index);
+                    rightBtn.attr('data-index', index);
+                    
+                    leftBtn.prop('disabled', index === 0);
+                    rightBtn.prop('disabled', index === totalColumns - 1);
+                });
+            }
+            
+            // Initialize column control buttons
+            function initColumnControls() {
+                // Remove any existing handlers first
+                $(".header-button").off('click');
+                
+                // Add event listeners for column movement buttons
+                $(".header-button.move-left").on('click', function(e) {
+                    e.stopPropagation(); // Prevent event bubbling
+                    const index = parseInt($(this).attr("data-index"));
+                    
+                    if (index > 0) {
+                        moveColumn(index, index - 1);
+                        updateColumnControls();
+                        // Update the diagram with current settings
+                        redrawSankeyDiagram();
+                    }
+                });
+                
+                $(".header-button.move-right").on('click', function(e) {
+                    e.stopPropagation(); // Prevent event bubbling
+                    const index = parseInt($(this).attr("data-index"));
+                    
+                    if (index < $("#editable-table thead th").length - 1) {
+                        moveColumn(index, index + 1);
+                        updateColumnControls();
+                        // Update the diagram with current settings
+                        redrawSankeyDiagram();
+                    }
+                });
+                
+                // Update the button states
+                updateColumnControls();
+                
+                console.log("Column controls initialized");
+            }
+            
+            // Function to move a column in the table
+            function moveColumn(fromIdx, toIdx) {
+                // Move the column in each row
+                $("#editable-table tr").each(function() {
+                    var row = $(this);
+                    var cells = row.find("th, td");
+                    
+                    // Get the cell we're moving
+                    var cellToMove = cells.eq(fromIdx);
+                    
+                    // Remove it from its current position
+                    cellToMove.detach();
+                    
+                    // Insert it at the new position
+                    if (toIdx < fromIdx) {
+                        // Moving left
+                        cells.eq(toIdx).before(cellToMove);
+                    } else {
+                        // Moving right
+                        cells.eq(toIdx).after(cellToMove);
+                    }
+                });
+                
+                // Update the column select dropdown
+                updateColumnSelectOptions();
+            }
+            
+            // Update column select options
+            function updateColumnSelectOptions() {
+                var select = $("#column-select");
+                select.empty();
+                
+                $("#editable-table thead th").each(function(index) {
+                    var name = $(this).text().trim();
+                    select.append('<option value="' + index + '">' + name + '</option>');
+                });
+            }
+            
+            // Load sample data function
+            function loadSampleData() {
+                // Clear existing rows
+                $("#editable-table tbody").empty();
+                
+                // Add sample data rows
+                for (let i = 0; i < sampleData.length; i++) {
+                    let newRow = $("<tr>");
+                    
+                    for (let j = 0; j < sampleData[i].length; j++) {
+                        newRow.append('<td class="editable" contenteditable="true">' + sampleData[i][j] + '</td>');
+                    }
+                    
+                    $("#editable-table tbody").append(newRow);
+                }
+            }
+            
+            // Parse CSV file function
+            function parseCSVFile(file) {
+                Papa.parse(file, {
+                    complete: function(results) {
+                        loadCSVData(results.data);
+                    },
+                    header: false,
+                    skipEmptyLines: true
+                });
+            }
+            
+            // Load CSV from a file on the server
+            function loadCSVFromFile(filename) {
+                fetch(filename)
+                    .then(response => response.text())
+                    .then(csvText => {
+                        const results = Papa.parse(csvText, {
+                            header: false,
+                            skipEmptyLines: true
+                        });
+                        loadCSVData(results.data);
+                    })
+                    .catch(error => {
+                        console.error('Error loading CSV file:', error);
+                    });
+            }
+            
+            // Load CSV data into the table
+            function loadCSVData(data) {
+                // Clear existing rows
+                $("#editable-table tbody").empty();
+                
+                // Always skip the first row (header)
+                const startRow = 1;
+                
+                // Add data rows (skip header row)
+                for (let i = startRow; i < data.length; i++) {
+                    let newRow = $("<tr>");
+                    
+                    // Ensure we have 5 columns (pad with empty cells if needed)
+                    const rowData = data[i];
+                    const columnCount = $("#editable-table thead th").length;
+                    
+                    for (let j = 0; j < columnCount; j++) {
+                        // Get cell value and trim whitespace
+                        const cellValue = j < rowData.length ? rowData[j].trim() : "";
+                        
+                        // Create the cell
+                        const cell = $('<td class="editable" contenteditable="false"></td>');
+                        
+                        // Check if the cell value contains a Markdown link
+                        if (/\[([^\]]+)\]\(([^)]+)\)/g.test(cellValue)) {
+                            // Store the Markdown format in a data attribute for editing
+                            cell.attr('data-markdown', cellValue);
+                            
+                            // Convert Markdown links to HTML links for display
+                            let displayContent = cellValue.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+                            cell.html(displayContent);
+                        } else {
+                            // If no Markdown links, just use the text
+                            cell.text(cellValue);
+                        }
+                        
+                        newRow.append(cell);
+                    }
+                    
+                    $("#editable-table tbody").append(newRow);
+                }
+                
+                // Reinitialize row sorting
+                initTableRowSorting();
+                
+                // Reinitialize column controls
+                initColumnControls();
+                
+                // Update the diagram with current settings
+                redrawSankeyDiagram();
+            }
+
+            // Handle Sankey options changes
+            $("#sankey-options input, #sankey-options select").on("input change", function() {
+                // Update settings object
+                sankeySettings.nodeWidth = parseInt($("#node-width").val());
+                sankeySettings.nodePadding = parseInt($("#node-padding").val());
+                sankeySettings.curvature = parseFloat($("#curvature").val());
+                sankeySettings.nodeAlignment = $("#node-alignment").val();
+                sankeySettings.showValues = $("#show-values").val() === "true";
+                sankeySettings.diagramScale = parseInt($("#diagram-scale").val());
+                
+                console.log("Settings updated:", sankeySettings);
+                
+                // Force complete redraw of the diagram
+                redrawSankeyDiagram();
+            });
+            
+            // Function to completely redraw the diagram with current settings
+            function redrawSankeyDiagram() {
+                // Clear the container
+                $("#mermaid-container").empty();
+                
+                // Log current settings for debugging
+                console.log("Applying settings:", JSON.stringify(sankeySettings));
+                
+                // Re-initialize mermaid with new settings
+                mermaid.initialize({
+                    startOnLoad: false,  // Changed to false to prevent auto-initialization
+                    theme: 'default',
+                    securityLevel: 'loose',
+                    flowchart: { useMaxWidth: false },
+                    sankey: { 
+                        useMaxWidth: true,
+                        nodeWidth: sankeySettings.nodeWidth,
+                        nodePadding: sankeySettings.nodePadding,
+                        curvature: sankeySettings.curvature,
+                        nodeAlignment: sankeySettings.nodeAlignment,
+                        showValues: sankeySettings.showValues
+                    }
+                });
+                
+                // Generate new diagram content
+                generateSankeyDiagram();
+            }
+            
+            // Generate Sankey diagram from table data
+            function generateSankeyDiagram() {
+                // This function adapts the logic from makeMermaid.py to JavaScript
+                let sankeyData = [];
+                
+                // Get column headers
+                let headers = [];
+                $("#editable-table thead th").each(function() {
+                    headers.push($(this).text().trim());
+                });
+                
+                // Process each row
+                $("#editable-table tbody tr").each(function() {
+                    let rowData = [];
+                    $(this).find("td").each(function() {
+                        // Get text content
+                        let cellText = $(this).text().trim();
+                        
+                        rowData.push(cellText);
+                    });
+                    
+                    // Skip empty rows
+                    if (rowData.every(cell => cell === "")) {
+                        return;
+                    }
+                    
+                    // Create Sankey connections from the row
+                    // Similar to how makeMermaid.py processes the data
+                    for (let i = 0; i < rowData.length - 1; i++) {
+                        let source = rowData[i];
+                        let target = rowData[i + 1];
+                        
+                        // Skip if either source or target is empty
+                        if (source && target) {
+                            sankeyData.push([source, target, 10]);
+                        }
+                    }
+                });
+                
+                // Generate the Mermaid text
+                let mermaidText = "sankey-beta\n";
+                
+                // Add connections to the diagram
+                sankeyData.forEach(connection => {
+                    mermaidText += `${connection[0]}, ${connection[1]}, ${connection[2]}\n`;
+                });
+                
+                // If no data, show a placeholder
+                if (sankeyData.length === 0) {
+                    mermaidText += "Country, City/Town, 10\n";
+                    mermaidText += "City/Town, Person, 10\n";
+                    mermaidText += "Person, Project, 10\n";
+                    mermaidText += "Project, Organization, 10\n";
+                }
+                
+                // Create a new container for the diagram
+                const scale = sankeySettings.diagramScale / 100;
+                const container = $('<div class="mermaid-wrapper"></div>');
+                const pre = $('<pre class="mermaid"></pre>').text(mermaidText);
+                container.append(pre);
+                $("#mermaid-container").html(container);
+                
+                // Initialize the diagram with current settings
+                try {
+                    mermaid.init(undefined, document.querySelector('.mermaid'));
+                    
+                    // Apply scaling after the diagram is rendered
+                    setTimeout(() => {
+                        // First, ensure the container has enough space
+                        const svgElement = $('.mermaid svg');
+                        const originalHeight = svgElement.height();
+                        const originalWidth = svgElement.width();
+                        
+                        // Add padding to the container to ensure content isn't clipped
+                        $('.mermaid-wrapper').css({
+                            'padding-top': `${originalHeight * (scale - 1) / 2}px`,
+                            'padding-bottom': `${originalHeight * (scale - 1) / 2}px`,
+                            'padding-left': `${originalWidth * (scale - 1) / 2}px`,
+                            'padding-right': `${originalWidth * (scale - 1) / 2}px`,
+                            'overflow': 'auto'
+                        });
+                        
+                        // Apply the scale transform
+                        svgElement.css({
+                            'transform': `scale(${scale})`,
+                            'transform-origin': 'top center',
+                            'display': 'block',
+                            'margin': '0 auto'
+                        });
+                        
+                        // Scroll to the top to ensure we see the beginning of the diagram
+                        $('#mermaid-container').scrollTop(0);
+                    }, 200); // 250ms debounce
+                } catch (error) {
+                    console.error("Error initializing mermaid:", error);
+                    $("#mermaid-container").append('<div class="error">Error rendering diagram. Check console for details.</div>');
+                }
+            }
+
+            // Export data to a Mermaid file
+            $("#export-data").click(function() {
+                // Get the current Mermaid diagram data
+                let sankeyData = [];
+                
+                // Process each row to create connections
+                $("#editable-table tbody tr").each(function() {
+                    let rowData = [];
+                    $(this).find("td").each(function() {
+                        // Get text content
+                        let cellText = $(this).text().trim();
+                        rowData.push(cellText);
+                    });
+                    
+                    // Skip empty rows
+                    if (rowData.every(cell => cell === "")) {
+                        return;
+                    }
+                    
+                    // Create Sankey connections from the row
+                    // Similar to how makeMermaid.py processes the data
+                    for (let i = 0; i < rowData.length - 1; i++) {
+                        let source = rowData[i];
+                        let target = rowData[i + 1];
+                        
+                        // Skip if either source or target is empty
+                        if (source && target) {
+                            sankeyData.push([source, target, 10]);
+                        }
+                    }
+                });
+                
+                // Generate Mermaid Sankey diagram text with YAML frontmatter for configuration
+                let mermaidText = "---\n";
+                mermaidText += "config:\n";
+                mermaidText += "  sankey:\n";
+                mermaidText += `    nodeWidth: ${sankeySettings.nodeWidth}\n`;
+                mermaidText += `    nodePadding: ${sankeySettings.nodePadding}\n`;
+                mermaidText += `    curvature: ${sankeySettings.curvature}\n`;
+                mermaidText += `    nodeAlignment: ${sankeySettings.nodeAlignment}\n`;
+                mermaidText += `    showValues: ${sankeySettings.showValues}\n`;
+                mermaidText += `    diagramScale: ${sankeySettings.diagramScale}\n`;
+                mermaidText += "---\n\n";
+                
+                // Add Sankey directive
+                mermaidText += "sankey-beta\n";
+                
+                // Add connections to the diagram
+                sankeyData.forEach(connection => {
+                    mermaidText += `${connection[0]}, ${connection[1]}, ${connection[2]}\n`;
+                });
+                
+                // Create and download the file
+                const blob = new Blob([mermaidText], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'sankey-diagram.mmd';
+                a.click();
+                
+                URL.revokeObjectURL(url);
+            });
+            
+            // Export table data to CSV
+            $("#export-csv").click(function() {
+                // Get table data
+                let csvContent = "";
+                
+                // Add headers
+                let headers = [];
+                $("#editable-table thead th").each(function() {
+                    // Get the text but exclude the header controls
+                    let headerText = $(this).clone().children().remove().end().text().trim();
+                    headers.push(headerText);
+                });
+                csvContent += headers.join(",") + "\n";
+                
+                // Add rows
+                $("#editable-table tbody tr").each(function() {
+                    let row = [];
+                    $(this).find("td").each(function() {
+                        // Use the stored Markdown content if available, otherwise use the displayed text
+                        let cellText = $(this).attr('data-markdown') || $(this).text().trim();
+                        
+                        // If the cell doesn't have stored Markdown but contains links, convert them to Markdown
+                        if (!$(this).attr('data-markdown') && $(this).find('a').length > 0) {
+                            cellText = $(this).html();
+                            $(this).find('a').each(function() {
+                                const linkText = $(this).text();
+                                const linkUrl = $(this).attr('href');
+                                cellText = cellText.replace($(this)[0].outerHTML, `[${linkText}](${linkUrl})`);
+                            });
+                        }
+                        
+                        // Escape commas and quotes for CSV format
+                        if (cellText.includes(',') || cellText.includes('"') || cellText.includes('\n')) {
+                            cellText = '"' + cellText.replace(/"/g, '""') + '"';
+                        }
+                        
+                        row.push(cellText);
+                    });
+                    csvContent += row.join(",") + "\n";
+                });
+                
+                // Create and download the file
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'sankey-data.csv';
+                a.click();
+                
+                URL.revokeObjectURL(url);
+            });
+            
+            // Save Options button
+            $("#save-options").click(function() {
+                // Create a JSON object with the current settings
+                const optionsData = {
+                    nodeWidth: sankeySettings.nodeWidth,
+                    nodePadding: sankeySettings.nodePadding,
+                    curvature: sankeySettings.curvature,
+                    nodeAlignment: sankeySettings.nodeAlignment,
+                    showValues: sankeySettings.showValues,
+                    diagramScale: sankeySettings.diagramScale
+                };
+                
+                // Convert to JSON string
+                const jsonString = JSON.stringify(optionsData, null, 2);
+                
+                // Create and download the file
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'sankey-options.json';
+                a.click();
+                
+                URL.revokeObjectURL(url);
+            });
+            
+            // Load Options button
+            $("#load-options").click(function() {
+                $("#options-file-input").click();
+            });
+            
+            // Handle options file selection
+            $("#options-file-input").change(function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    
+                    reader.onload = function(event) {
+                        try {
+                            // Parse the JSON data
+                            const optionsData = JSON.parse(event.target.result);
+                            
+                            // Update the settings object
+                            if (optionsData.nodeWidth !== undefined) sankeySettings.nodeWidth = optionsData.nodeWidth;
+                            if (optionsData.nodePadding !== undefined) sankeySettings.nodePadding = optionsData.nodePadding;
+                            if (optionsData.curvature !== undefined) sankeySettings.curvature = optionsData.curvature;
+                            if (optionsData.nodeAlignment !== undefined) sankeySettings.nodeAlignment = optionsData.nodeAlignment;
+                            if (optionsData.showValues !== undefined) sankeySettings.showValues = optionsData.showValues;
+                            if (optionsData.diagramScale !== undefined) sankeySettings.diagramScale = optionsData.diagramScale;
+                            
+                            // Update the UI controls
+                            $("#node-width").val(sankeySettings.nodeWidth);
+                            $("#node-padding").val(sankeySettings.nodePadding);
+                            $("#curvature").val(sankeySettings.curvature);
+                            $("#node-alignment").val(sankeySettings.nodeAlignment);
+                            $("#show-values").val(sankeySettings.showValues.toString());
+                            $("#diagram-scale").val(sankeySettings.diagramScale);
+                            
+                            // Update the diagram with new settings
+                            redrawSankeyDiagram();
+                            
+                            console.log("Options loaded successfully:", optionsData);
+                        } catch (error) {
+                            console.error("Error parsing options file:", error);
+                            alert("Error loading options file. Please ensure it's a valid JSON file.");
+                        }
+                    };
+                    
+                    reader.readAsText(file);
+                }
+            });
+            
+            // Fit to Width button
+            $("#fit-width").click(function() {
+                fitDiagramToWidth();
+            });
+            
+            // Function to fit diagram to current container width
+            function fitDiagramToWidth() {
+                // Get the container width
+                const containerWidth = $("#mermaid-container").width();
+                
+                // Get the current SVG width
+                const svgElement = $('.mermaid svg');
+                const svgWidth = svgElement.width();
+                
+                if (svgWidth === 0) {
+                    console.error("SVG element not properly loaded or has zero width");
+                    return;
+                }
+                
+                // Calculate the scale needed to fit the width
+                let scale = (containerWidth - 40) / svgWidth; // 40px padding for safety
+                
+                // Set a maximum scale limit to prevent excessive magnification
+                const MAX_SCALE = 1.5; // 150% maximum scale
+                if (scale > MAX_SCALE) {
+                    scale = MAX_SCALE;
+                    console.log("Scale limited to maximum:", MAX_SCALE);
+                }
+                
+                // Set a minimum scale limit to prevent excessive reduction
+                const MIN_SCALE = 0.3; // 30% minimum scale
+                if (scale < MIN_SCALE) {
+                    scale = MIN_SCALE;
+                    console.log("Scale limited to minimum:", MIN_SCALE);
+                }
+                
+                // Update the scale setting and input field
+                sankeySettings.diagramScale = Math.round(scale * 100);
+                $("#diagram-scale").val(sankeySettings.diagramScale);
+                
+                // Apply the new scale
+                redrawSankeyDiagram();
+                
+                console.log("Fit to width applied. New scale:", sankeySettings.diagramScale + "%");
+            }
+            
+            // Initialize the column select dropdown
+            updateColumnSelectOptions();
+        });
+    </script>
+</body>
+</html>
