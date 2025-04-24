@@ -265,6 +265,38 @@
                 border-bottom: 1px solid #ddd;
             }
         }
+        .warning-cell {
+            background-color: #fff3cd !important;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        #mermaid-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        .error-message {
+            margin-bottom: 10px;
+        }
+        .error-details {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow: auto;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -297,6 +329,11 @@
                 <button id="load-csv-btn" class="button">Load CSV</button>
                 <button id="export-csv" class="button">Save CSV</button>
                 <input type="file" id="csv-file-input" class="file-input" accept=".csv">
+            </div>
+            
+            <div class="url-input-container" style="margin: 10px 0; display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="csv-url-input" placeholder="Enter CSV URL" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiwAywSDNHWbSj-vlGMwZ1kzUzzUw9TYpZCZyya9J08UutLzNBFsvfCcL3qDMbSCQUWsMRXq6nXyjD/pub?gid=1670226245&single=true&output=csv">
+                <button id="load-csv-url" class="button">Load from URL</button>
             </div>
             
             <div id="table-container">
@@ -372,6 +409,10 @@
                         <label for="diagram-scale">Diagram Scale (%)</label>
                         <input type="number" id="diagram-scale" min="50" max="200" value="100" step="10">
                     </div>
+                    <div class="option-group">
+                        <label for="font-size">Font Size (px)</label>
+                        <input type="number" id="font-size" min="8" max="24" value="12" step="1">
+                    </div>
                 </div>
                 <div class="info-panel" style="margin-top: 10px; font-size: 0.9em; background-color: #f8f9fa; padding: 8px; border-radius: 4px;">
                     <p><strong>Note:</strong> Mermaid's Sankey implementation has limited options. Only node alignment and value display can be customized.</p>
@@ -384,13 +425,8 @@
                 </div>
             </div>
             <div id="mermaid-container">
-                <pre class="mermaid">
-sankey-beta
-Country, City/Town, 10
-City/Town, Person, 10
-Person, Project, 10
-Project, Organization, 10
-                </pre>
+                <div id="mermaid-error"></div>
+                <div class="mermaid-wrapper"></div>
             </div>
         </div>
     </div>
@@ -417,12 +453,14 @@ Project, Organization, 10
     <script>
         // Initialize mermaid with default settings
         let sankeySettings = {
-            nodeWidth: 40,
-            nodePadding: 60,
+            nodeWidth: 15,
+            nodePadding: 10,
             curvature: 0.5,
-            nodeAlignment: 'justify',
-            showValues: false,
-            diagramScale: 100
+            nodeAlignment: "justify", // left, right, justify
+            showValues: true,
+            diagramScale: 100,
+            theme: "default",
+            fontSize: 12 // Added font size setting with default of 12px
         };
         
         mermaid.initialize({
@@ -473,6 +511,7 @@ Project, Organization, 10
             $("#node-alignment").val(sankeySettings.nodeAlignment);
             $("#show-values").val(sankeySettings.showValues);
             $("#diagram-scale").val(sankeySettings.diagramScale);
+            $("#font-size").val(sankeySettings.fontSize);
             
             // Load data from AfricaData.csv on page load
             loadCSVFromFile('AfricaData.csv');
@@ -596,7 +635,11 @@ Project, Organization, 10
             // Clear table button
             $("#clear-table").click(function() {
                 if (confirm("Are you sure you want to clear all data?")) {
+                    // Clear the table
                     $("#editable-table tbody").empty();
+                    
+                    // Remove any warning messages
+                    $(".info-panel.warning").remove();
                     
                     // Add one empty row
                     var columnCount = $("#editable-table thead th").length;
@@ -634,6 +677,11 @@ Project, Organization, 10
                 if (file) {
                     if (confirm("This will replace your current data with the CSV data. Continue?")) {
                         parseCSVFile(file);
+                        // Reset the file input so the same file can be selected again
+                        $(this).val('');
+                    } else {
+                        // Reset the file input if user cancels
+                        $(this).val('');
                     }
                 }
             });
@@ -814,6 +862,9 @@ Project, Organization, 10
                 // Clear existing rows
                 $("#editable-table tbody").empty();
                 
+                // Remove any warning messages
+                $(".info-panel.warning").remove();
+                
                 // Add sample data rows
                 for (let i = 0; i < sampleData.length; i++) {
                     let newRow = $("<tr>");
@@ -830,6 +881,7 @@ Project, Organization, 10
             function parseCSVFile(file) {
                 Papa.parse(file, {
                     complete: function(results) {
+                        console.log("CSV parsed, rows:", results.data.length);
                         loadCSVData(results.data);
                     },
                     header: false,
@@ -846,6 +898,7 @@ Project, Organization, 10
                             header: false,
                             skipEmptyLines: true
                         });
+                        console.log("CSV loaded from file, rows:", results.data.length);
                         loadCSVData(results.data);
                     })
                     .catch(error => {
@@ -858,15 +911,80 @@ Project, Organization, 10
                 // Clear existing rows
                 $("#editable-table tbody").empty();
                 
+                // Remove any existing warning messages
+                $(".info-panel.warning").remove();
+                
                 // Always skip the first row (header)
                 const startRow = 1;
                 
+                // Check if we have data to load
+                if (!data || data.length <= startRow) {
+                    console.error("No data to load or data is missing header row");
+                    alert("Error: The CSV file is empty or missing a header row.");
+                    return;
+                }
+                
+                console.log(`Loading ${data.length - startRow} data rows`);
+                
+                // Determine the maximum number of columns in the data
+                let maxColumns = 0;
+                for (let i = 0; i < data.length; i++) {
+                    if (data[i].length > maxColumns) {
+                        maxColumns = data[i].length;
+                    }
+                }
+                
+                // Get the current number of columns in the table
+                const currentColumnCount = $("#editable-table thead th").length;
+                
+                // If we need more columns, add them
+                if (maxColumns > currentColumnCount) {
+                    console.log(`Adding ${maxColumns - currentColumnCount} new columns to accommodate data`);
+                    
+                    // Add new header columns
+                    for (let i = currentColumnCount; i < maxColumns; i++) {
+                        const columnName = `Column ${i + 1}`;
+                        const newHeader = $(`
+                            <th data-name="${columnName}">
+                                <div class="header-controls">
+                                    <button class="header-button move-left" data-index="${i}">←</button>
+                                    <button class="header-button move-right" data-index="${i}">→</button>
+                                </div>
+                                ${columnName}
+                            </th>
+                        `);
+                        $("#editable-table thead tr").append(newHeader);
+                    }
+                    
+                    // Update column controls
+                    updateColumnControls();
+                }
+                
                 // Add data rows (skip header row)
+                let rowsAdded = 0;
+                let rowsWithWarnings = 0;
+                
                 for (let i = startRow; i < data.length; i++) {
                     let newRow = $("<tr>");
+                    let rowData = data[i];
+                    let hasWarning = false;
                     
-                    // Ensure we have 5 columns (pad with empty cells if needed)
-                    const rowData = data[i];
+                    // Skip completely empty rows
+                    if (!rowData || rowData.every(cell => !cell || cell.trim() === "")) {
+                        console.log(`Skipping empty row at index ${i}`);
+                        continue;
+                    }
+                    
+                    // Check if row has inconsistent column count
+                    if (rowData.length < 5) {
+                        console.warn(`Row ${i} has fewer than 5 columns: ${rowData.length}`);
+                        hasWarning = true;
+                    } else if (rowData.length > 5 && rowData.length <= maxColumns) {
+                        console.warn(`Row ${i} has more than 5 columns: ${rowData.length}`);
+                        hasWarning = true;
+                    }
+                    
+                    // Get the current number of columns in the table (might have been updated)
                     const columnCount = $("#editable-table thead th").length;
                     
                     for (let j = 0; j < columnCount; j++) {
@@ -875,6 +993,11 @@ Project, Organization, 10
                         
                         // Create the cell
                         const cell = $('<td class="editable" contenteditable="false"></td>');
+                        
+                        // Add warning class if this row has inconsistent column count
+                        if (hasWarning) {
+                            cell.addClass("warning-cell");
+                        }
                         
                         // Check if the cell value contains a Markdown link
                         if (/\[([^\]]+)\]\(([^)]+)\)/g.test(cellValue)) {
@@ -893,6 +1016,45 @@ Project, Organization, 10
                     }
                     
                     $("#editable-table tbody").append(newRow);
+                    rowsAdded++;
+                    
+                    if (hasWarning) {
+                        rowsWithWarnings++;
+                    }
+                }
+                
+                console.log(`Added ${rowsAdded} rows to table (${rowsWithWarnings} with warnings)`);
+                
+                // Show warning message if there were rows with inconsistent column counts
+                if (rowsWithWarnings > 0) {
+                    const warningMsg = $(`
+                        <div class="info-panel warning" style="margin-top: 10px;">
+                            <p><strong>Warning:</strong> ${rowsWithWarnings} rows had inconsistent column counts. 
+                            These rows are highlighted in the table. The Sankey diagram may not display these connections correctly.</p>
+                        </div>
+                    `);
+                    
+                    // Insert warning after the table controls
+                    $(".table-controls").after(warningMsg);
+                    
+                    // Add CSS for warning cells
+                    if (!$("style:contains('.warning-cell')").length) {
+                        $("head").append(`
+                            <style>
+                                .warning-cell {
+                                    background-color: #fff3cd !important;
+                                }
+                                .warning {
+                                    background-color: #fff3cd;
+                                    border: 1px solid #ffeeba;
+                                    color: #856404;
+                                    padding: 10px;
+                                    border-radius: 4px;
+                                    margin-bottom: 15px;
+                                }
+                            </style>
+                        `);
+                    }
                 }
                 
                 // Reinitialize row sorting
@@ -914,6 +1076,7 @@ Project, Organization, 10
                 sankeySettings.nodeAlignment = $("#node-alignment").val();
                 sankeySettings.showValues = $("#show-values").val() === "true";
                 sankeySettings.diagramScale = parseInt($("#diagram-scale").val());
+                sankeySettings.fontSize = parseInt($("#font-size").val());
                 
                 console.log("Settings updated:", sankeySettings);
                 
@@ -951,8 +1114,12 @@ Project, Organization, 10
             
             // Generate Sankey diagram from table data
             function generateSankeyDiagram() {
+                // Clear any previous error messages
+                $("#mermaid-error").empty().hide();
+                
                 // This function adapts the logic from makeMermaid.py to JavaScript
                 let sankeyData = [];
+                let debugInfo = [];
                 
                 // Get column headers
                 let headers = [];
@@ -961,12 +1128,13 @@ Project, Organization, 10
                 });
                 
                 // Process each row
-                $("#editable-table tbody tr").each(function() {
+                $("#editable-table tbody tr").each(function(rowIndex) {
                     let rowData = [];
                     $(this).find("td").each(function() {
-                        // Get text content
+                        // Get text content and pre-sanitize it
                         let cellText = $(this).text().trim();
-                        
+                        // Remove apostrophes right away
+                        cellText = cellText.replace(/'/g, "");
                         rowData.push(cellText);
                     });
                     
@@ -976,85 +1144,289 @@ Project, Organization, 10
                     }
                     
                     // Create Sankey connections from the row
-                    // Similar to how makeMermaid.py processes the data
                     for (let i = 0; i < rowData.length - 1; i++) {
                         let source = rowData[i];
                         let target = rowData[i + 1];
                         
                         // Skip if either source or target is empty
                         if (source && target) {
-                            sankeyData.push([source, target, 10]);
+                            // Sanitize source and target for Mermaid
+                            const originalSource = source;
+                            const originalTarget = target;
+                            
+                            source = sanitizeForMermaid(source);
+                            target = sanitizeForMermaid(target);
+                            
+                            // Add to sankeyData only if both source and target are valid after sanitization
+                            if (source && target) {
+                                sankeyData.push([source, target, 10]);
+                                
+                                // Add debug info for this connection
+                                debugInfo.push({
+                                    rowIndex: rowIndex,
+                                    originalSource: originalSource,
+                                    sanitizedSource: source,
+                                    originalTarget: originalTarget,
+                                    sanitizedTarget: target
+                                });
+                            }
                         }
                     }
                 });
                 
-                // Generate the Mermaid text
+                // Generate Mermaid Sankey diagram text
                 let mermaidText = "sankey-beta\n";
                 
-                // Add connections to the diagram
-                sankeyData.forEach(connection => {
-                    mermaidText += `${connection[0]}, ${connection[1]}, ${connection[2]}\n`;
+                // Add connections to the diagram with line numbers for debugging
+                sankeyData.forEach((connection, index) => {
+                    const lineText = `${connection[0]}, ${connection[1]}, ${connection[2]}`;
+                    mermaidText += lineText + "\n";
+                    
+                    // Log every 10th line for debugging
+                    if (index % 10 === 0 || index > 75) {
+                        console.log(`Line ${index + 2}: ${lineText}`);
+                    }
                 });
                 
                 // If no data, show a placeholder
                 if (sankeyData.length === 0) {
-                    mermaidText += "Country, City/Town, 10\n";
-                    mermaidText += "City/Town, Person, 10\n";
+                    mermaidText += "Country, City-Town, 10\n";
+                    mermaidText += "City-Town, Person, 10\n";
                     mermaidText += "Person, Project, 10\n";
                     mermaidText += "Project, Organization, 10\n";
                 }
+                
+                // Log the sanitized data for debugging
+                console.log("Sanitized Sankey Data Count:", sankeyData.length);
+                console.log("Debug Info Count:", debugInfo.length);
                 
                 // Create a new container for the diagram
                 const scale = sankeySettings.diagramScale / 100;
                 const container = $('<div class="mermaid-wrapper"></div>');
                 const pre = $('<pre class="mermaid"></pre>').text(mermaidText);
                 container.append(pre);
-                $("#mermaid-container").html(container);
+                $("#mermaid-container").html('<div id="mermaid-error"></div>');
+                $("#mermaid-container").append(container);
                 
-                // Initialize the diagram with current settings
+                // Double-check the mermaid text for any remaining apostrophes
+                const finalText = pre.text();
+                if (finalText.includes("'")) {
+                    console.error("WARNING: Apostrophes still present in final Mermaid text!");
+                    pre.text(finalText.replace(/'/g, ""));
+                }
+                
+                // Render the diagram
+                renderMermaidDiagram();
+            }
+            
+            // Render the Mermaid diagram
+            function renderMermaidDiagram() {
                 try {
-                    mermaid.init(undefined, document.querySelector('.mermaid'));
+                    // Clear any previous error messages
+                    $("#mermaid-error").empty().hide();
+                    
+                    // Get the Mermaid text from the pre element
+                    const mermaidElement = $(".mermaid");
+                    let mermaidText = mermaidElement.text();
+                    
+                    // Log the raw Mermaid text for debugging
+                    console.log("Raw Mermaid Text (first 100 chars):", mermaidText.substring(0, 100));
+                    
+                    // Check for problematic apostrophes and remove them
+                    if (mermaidText.includes("'")) {
+                        console.error("WARNING: Apostrophes found in Mermaid text - removing them");
+                        mermaidText = removeAllApostrophes(mermaidText);
+                        mermaidElement.text(mermaidText);
+                    }
+                    
+                    // Initialize Mermaid with the current settings
+                    mermaid.initialize({
+                        startOnLoad: false,
+                        securityLevel: 'loose',
+                        theme: sankeySettings.theme,
+                        sankey: {
+                            nodeWidth: sankeySettings.nodeWidth,
+                            nodePadding: sankeySettings.nodePadding,
+                            curvature: sankeySettings.curvature,
+                            nodeAlignment: sankeySettings.nodeAlignment,
+                            showValues: sankeySettings.showValues
+                        },
+                        flowchart: {
+                            useMaxWidth: false
+                        },
+                        // Add error handling callback
+                        logLevel: 'error',
+                        fontFamily: 'Arial, sans-serif'
+                    });
+                    
+                    // Try the newer API first
+                    try {
+                        mermaid.run({
+                            querySelector: '.mermaid',
+                            suppressErrors: false
+                        }).catch(error => {
+                            console.error("Mermaid run API error:", error);
+                            // Fall back to the older API
+                            fallbackRendering();
+                        });
+                    } catch (error) {
+                        console.error("Error with mermaid.run:", error);
+                        // Fall back to the older API
+                        fallbackRendering();
+                    }
                     
                     // Apply scaling after the diagram is rendered
                     setTimeout(() => {
                         // First, ensure the container has enough space
-                        const svgElement = $('.mermaid svg');
-                        const originalHeight = svgElement.height();
-                        const originalWidth = svgElement.width();
+                        const svgElement = $(".mermaid-wrapper svg");
+                        if (!svgElement.length) {
+                            console.error("SVG element not properly loaded or has zero width");
+                            return;
+                        }
                         
-                        // Add padding to the container to ensure content isn't clipped
-                        $('.mermaid-wrapper').css({
-                            'padding-top': `${originalHeight * (scale - 1) / 2}px`,
-                            'padding-bottom': `${originalHeight * (scale - 1) / 2}px`,
-                            'padding-left': `${originalWidth * (scale - 1) / 2}px`,
-                            'padding-right': `${originalWidth * (scale - 1) / 2}px`,
-                            'overflow': 'auto'
-                        });
+                        // Apply the scale
+                        const scale = sankeySettings.diagramScale / 100;
+                        if (scale !== 1) {
+                            svgElement.css({
+                                transform: `scale(${scale})`,
+                                transformOrigin: 'top left'
+                            });
+                        }
                         
-                        // Apply the scale transform
-                        svgElement.css({
-                            'transform': `scale(${scale})`,
-                            'transform-origin': 'top center',
-                            'display': 'block',
-                            'margin': '0 auto'
-                        });
+                        // Apply font size to all text elements in the SVG
+                        svgElement.find('text').css('font-size', `${sankeySettings.fontSize}px`);
                         
-                        // Scroll to the top to ensure we see the beginning of the diagram
-                        $('#mermaid-container').scrollTop(0);
-                    }, 200); // 250ms debounce
+                    }, 1000); // Increased timeout to ensure rendering completes
                 } catch (error) {
-                    console.error("Error initializing mermaid:", error);
-                    $("#mermaid-container").append('<div class="error">Error rendering diagram. Check console for details.</div>');
+                    console.error("Error in renderMermaidDiagram:", error);
+                    
+                    // Show error message with details
+                    const errorMessage = $("<div>")
+                        .addClass("error-message")
+                        .html(`<strong>Error rendering diagram:</strong> ${error.message || error}<br><br>
+                               Check console for more details.`);
+                    
+                    $("#mermaid-error").html(errorMessage).show();
+                }
+                
+                // Fallback rendering function using the older API
+                function fallbackRendering() {
+                    console.log("Using fallback rendering method");
+                    try {
+                        // Try the older API
+                        mermaid.init(undefined, document.querySelector('.mermaid'));
+                    } catch (error) {
+                        console.error("Fallback rendering also failed:", error);
+                        
+                        // Last resort: Show simplified diagram
+                        showSimplifiedDiagram();
+                    }
+                }
+                
+                // Last resort function to show a simplified diagram
+                function showSimplifiedDiagram() {
+                    console.log("Using simplified diagram as last resort");
+                    
+                    // Create a very simple diagram with minimal nodes
+                    const simplifiedText = "sankey-beta\nA, B, 10\nB, C, 10\n";
+                    $(".mermaid").text(simplifiedText);
+                    
+                    // Try one more time with the simplest possible diagram
+                    try {
+                        mermaid.init(undefined, document.querySelector('.mermaid'));
+                    } catch (error) {
+                        console.error("Even simplified diagram failed:", error);
+                        
+                        // Show error and raw data
+                        const errorMessage = $("<div>")
+                            .addClass("error-message")
+                            .html(`<strong>Mermaid rendering failed:</strong> ${error.message || error}<br><br>
+                                   This may be due to a compatibility issue with your browser or the Mermaid library.<br><br>
+                                   You can still export your data as CSV or Mermaid file.`);
+                        
+                        $("#mermaid-error").html(errorMessage).show();
+                    }
                 }
             }
-
+            
+            // Helper function to sanitize text for Mermaid
+            function sanitizeForMermaid(text) {
+                if (!text) return text;
+                
+                // Convert to string if not already
+                text = String(text);
+                
+                // Remove ALL types of apostrophes and quotes
+                text = removeAllApostrophes(text);
+                
+                // Replace other problematic characters that cause Mermaid syntax errors
+                // Keep capital letters and spaces intact
+                let sanitized = text
+                    // Replace other problematic characters
+                    .replace(/;/g, "")
+                    .replace(/:/g, "")
+                    .replace(/\//g, "-")
+                    .replace(/\\/g, "-")
+                    .replace(/\(/g, "")
+                    .replace(/\)/g, "")
+                    .replace(/,/g, "")
+                    .replace(/"/g, "")
+                    .replace(/\n/g, " ")
+                    .replace(/#/g, "")
+                    .replace(/\+/g, "")
+                    .replace(/%/g, "")
+                    .replace(/\*/g, "")
+                    .replace(/\^/g, "")
+                    .replace(/\|/g, "-")
+                    .replace(/</g, "")
+                    .replace(/>/g, "")
+                    .replace(/=/g, "")
+                    .replace(/\[/g, "")
+                    .replace(/\]/g, "")
+                    .replace(/\{/g, "")
+                    .replace(/\}/g, "")
+                    .replace(/\$/g, "")
+                    .replace(/@/g, "")
+                    .replace(/!/g, "")
+                    .replace(/~/g, "-")
+                    .replace(/`/g, "")
+                    .trim();
+                
+                // Double-check for apostrophes that might have been missed
+                sanitized = removeAllApostrophes(sanitized);
+                
+                // Truncate if too long (Mermaid can have issues with very long node names)
+                if (sanitized.length > 30) {
+                    sanitized = sanitized.substring(0, 27) + "...";
+                }
+                
+                // Ensure the text is not empty after sanitization
+                if (!sanitized) {
+                    sanitized = "node";
+                }
+                
+                return sanitized;
+            }
+            
+            // Helper function to remove ALL types of apostrophes and quotes
+            function removeAllApostrophes(text) {
+                if (!text) return text;
+                
+                // This handles ALL possible apostrophe and quote characters:
+                // - Standard apostrophe (')
+                // - Left/right single quotes ('/')
+                // - Left/right double quotes ("")
+                // - Prime/double prime (′/″)
+                return text.replace(/[\u0027\u2018\u2019\u201A\u201B\u2032\u2035\u201C\u201D\u201E\u201F\u2033\u2036\u2018\u2019\u201C\u201D]/g, "");
+            }
+            
             // Export data to a Mermaid file
             $("#export-data").click(function() {
                 // Get the current Mermaid diagram data
                 let sankeyData = [];
                 
                 // Process each row to create connections
-                $("#editable-table tbody tr").each(function() {
+                $("#editable-table tbody tr").each(function(rowIndex) {
                     let rowData = [];
                     $(this).find("td").each(function() {
                         // Get text content
@@ -1068,14 +1440,20 @@ Project, Organization, 10
                     }
                     
                     // Create Sankey connections from the row
-                    // Similar to how makeMermaid.py processes the data
                     for (let i = 0; i < rowData.length - 1; i++) {
                         let source = rowData[i];
                         let target = rowData[i + 1];
                         
                         // Skip if either source or target is empty
                         if (source && target) {
-                            sankeyData.push([source, target, 10]);
+                            // Sanitize source and target for Mermaid
+                            source = sanitizeForMermaid(source);
+                            target = sanitizeForMermaid(target);
+                            
+                            // Add to sankeyData only if both source and target are valid after sanitization
+                            if (source && target) {
+                                sankeyData.push([source, target, 10]);
+                            }
                         }
                     }
                 });
@@ -1090,6 +1468,7 @@ Project, Organization, 10
                 mermaidText += `    nodeAlignment: ${sankeySettings.nodeAlignment}\n`;
                 mermaidText += `    showValues: ${sankeySettings.showValues}\n`;
                 mermaidText += `    diagramScale: ${sankeySettings.diagramScale}\n`;
+                mermaidText += `    fontSize: ${sankeySettings.fontSize}\n`;
                 mermaidText += "---\n\n";
                 
                 // Add Sankey directive
@@ -1115,46 +1494,33 @@ Project, Organization, 10
             // Export table data to CSV
             $("#export-csv").click(function() {
                 // Get table data
-                let csvContent = "";
+                let csvData = [];
                 
-                // Add headers
-                let headers = [];
+                // Get header row
+                let headerRow = [];
                 $("#editable-table thead th").each(function() {
-                    // Get the text but exclude the header controls
-                    let headerText = $(this).clone().children().remove().end().text().trim();
-                    headers.push(headerText);
+                    headerRow.push($(this).text().trim());
                 });
-                csvContent += headers.join(",") + "\n";
+                csvData.push(headerRow);
                 
-                // Add rows
+                // Get data rows
                 $("#editable-table tbody tr").each(function() {
-                    let row = [];
+                    let rowData = [];
                     $(this).find("td").each(function() {
-                        // Use the stored Markdown content if available, otherwise use the displayed text
-                        let cellText = $(this).attr('data-markdown') || $(this).text().trim();
-                        
-                        // If the cell doesn't have stored Markdown but contains links, convert them to Markdown
-                        if (!$(this).attr('data-markdown') && $(this).find('a').length > 0) {
-                            cellText = $(this).html();
-                            $(this).find('a').each(function() {
-                                const linkText = $(this).text();
-                                const linkUrl = $(this).attr('href');
-                                cellText = cellText.replace($(this)[0].outerHTML, `[${linkText}](${linkUrl})`);
-                            });
-                        }
-                        
-                        // Escape commas and quotes for CSV format
-                        if (cellText.includes(',') || cellText.includes('"') || cellText.includes('\n')) {
-                            cellText = '"' + cellText.replace(/"/g, '""') + '"';
-                        }
-                        
-                        row.push(cellText);
+                        rowData.push($(this).text().trim());
                     });
-                    csvContent += row.join(",") + "\n";
+                    
+                    // Only add non-empty rows
+                    if (!rowData.every(cell => cell === "")) {
+                        csvData.push(rowData);
+                    }
                 });
+                
+                // Convert to CSV string using PapaParse
+                const csvString = Papa.unparse(csvData);
                 
                 // Create and download the file
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 
                 const a = document.createElement('a');
@@ -1174,7 +1540,8 @@ Project, Organization, 10
                     curvature: sankeySettings.curvature,
                     nodeAlignment: sankeySettings.nodeAlignment,
                     showValues: sankeySettings.showValues,
-                    diagramScale: sankeySettings.diagramScale
+                    diagramScale: sankeySettings.diagramScale,
+                    fontSize: sankeySettings.fontSize
                 };
                 
                 // Convert to JSON string
@@ -1215,6 +1582,7 @@ Project, Organization, 10
                             if (optionsData.nodeAlignment !== undefined) sankeySettings.nodeAlignment = optionsData.nodeAlignment;
                             if (optionsData.showValues !== undefined) sankeySettings.showValues = optionsData.showValues;
                             if (optionsData.diagramScale !== undefined) sankeySettings.diagramScale = optionsData.diagramScale;
+                            if (optionsData.fontSize !== undefined) sankeySettings.fontSize = optionsData.fontSize;
                             
                             // Update the UI controls
                             $("#node-width").val(sankeySettings.nodeWidth);
@@ -1223,6 +1591,7 @@ Project, Organization, 10
                             $("#node-alignment").val(sankeySettings.nodeAlignment);
                             $("#show-values").val(sankeySettings.showValues.toString());
                             $("#diagram-scale").val(sankeySettings.diagramScale);
+                            $("#font-size").val(sankeySettings.fontSize);
                             
                             // Update the diagram with new settings
                             redrawSankeyDiagram();
@@ -1249,7 +1618,7 @@ Project, Organization, 10
                 const containerWidth = $("#mermaid-container").width();
                 
                 // Get the current SVG width
-                const svgElement = $('.mermaid svg');
+                const svgElement = $(".mermaid-wrapper svg");
                 const svgWidth = svgElement.width();
                 
                 if (svgWidth === 0) {
@@ -1286,6 +1655,224 @@ Project, Organization, 10
             
             // Initialize the column select dropdown
             updateColumnSelectOptions();
+            
+            // Load CSV from URL button
+            $("#load-csv-url").click(function() {
+                const url = $("#csv-url-input").val().trim();
+                
+                if (!url) {
+                    alert("Please enter a valid URL to a CSV file.");
+                    return;
+                }
+                
+                if (confirm("This will replace your current data with the CSV data from the URL. Continue?")) {
+                    // Show loading indicator
+                    $(this).text("Loading...").prop("disabled", true);
+                    
+                    // Fetch the CSV from the URL
+                    fetch(url)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! Status: ${response.status}`);
+                            }
+                            return response.text();
+                        })
+                        .then(csvText => {
+                            console.log("CSV loaded from URL successfully");
+                            
+                            // Remove ALL types of apostrophes and quotes from the entire CSV text
+                            csvText = removeAllApostrophes(csvText);
+                            
+                            // Parse the CSV text
+                            const results = Papa.parse(csvText, {
+                                header: false,
+                                skipEmptyLines: true
+                            });
+                            
+                            console.log("CSV parsed from URL, rows:", results.data.length);
+                            
+                            // Load the data into the table
+                            loadCSVData(results.data);
+                            
+                            // Generate and render the diagram
+                            generateSankeyDiagram();
+                        })
+                        .catch(error => {
+                            console.error("Error loading CSV from URL:", error);
+                            alert(`Error loading CSV from URL: ${error.message}`);
+                        })
+                        .finally(() => {
+                            // Reset button state
+                            $("#load-csv-url").text("Load from URL").prop("disabled", false);
+                        });
+                }
+            });
+            
+            // Generate Sankey diagram from table data
+            function generateSankeyDiagram() {
+                // Clear any previous error messages
+                $("#mermaid-error").empty().hide();
+                
+                // This function adapts the logic from makeMermaid.py to JavaScript
+                let sankeyData = [];
+                let debugInfo = [];
+                
+                // Get column headers
+                let headers = [];
+                $("#editable-table thead th").each(function() {
+                    headers.push($(this).text().trim());
+                });
+                
+                // Process each row
+                $("#editable-table tbody tr").each(function(rowIndex) {
+                    let rowData = [];
+                    $(this).find("td").each(function() {
+                        // Get text content and pre-sanitize it
+                        let cellText = $(this).text().trim();
+                        // Remove apostrophes right away
+                        cellText = cellText.replace(/'/g, "");
+                        rowData.push(cellText);
+                    });
+                    
+                    // Skip empty rows
+                    if (rowData.every(cell => cell === "")) {
+                        return;
+                    }
+                    
+                    // Create Sankey connections from the row
+                    for (let i = 0; i < rowData.length - 1; i++) {
+                        let source = rowData[i];
+                        let target = rowData[i + 1];
+                        
+                        // Skip if either source or target is empty
+                        if (source && target) {
+                            // Sanitize source and target for Mermaid
+                            const originalSource = source;
+                            const originalTarget = target;
+                            
+                            source = sanitizeForMermaid(source);
+                            target = sanitizeForMermaid(target);
+                            
+                            // Add to sankeyData only if both source and target are valid after sanitization
+                            if (source && target) {
+                                sankeyData.push([source, target, 10]);
+                                
+                                // Add debug info for this connection
+                                debugInfo.push({
+                                    rowIndex: rowIndex,
+                                    originalSource: originalSource,
+                                    sanitizedSource: source,
+                                    originalTarget: originalTarget,
+                                    sanitizedTarget: target
+                                });
+                            }
+                        }
+                    }
+                });
+                
+                // Generate Mermaid Sankey diagram text
+                let mermaidText = "sankey-beta\n";
+                
+                // Add connections to the diagram with line numbers for debugging
+                sankeyData.forEach((connection, index) => {
+                    const lineText = `${connection[0]}, ${connection[1]}, ${connection[2]}`;
+                    mermaidText += lineText + "\n";
+                    
+                    // Log every 10th line for debugging
+                    if (index % 10 === 0 || index > 75) {
+                        console.log(`Line ${index + 2}: ${lineText}`);
+                    }
+                });
+                
+                // If no data, show a placeholder
+                if (sankeyData.length === 0) {
+                    mermaidText += "Country, City-Town, 10\n";
+                    mermaidText += "City-Town, Person, 10\n";
+                    mermaidText += "Person, Project, 10\n";
+                    mermaidText += "Project, Organization, 10\n";
+                }
+                
+                // Log the sanitized data for debugging
+                console.log("Sanitized Sankey Data Count:", sankeyData.length);
+                console.log("Debug Info Count:", debugInfo.length);
+                
+                // Create a new container for the diagram
+                const scale = sankeySettings.diagramScale / 100;
+                const container = $('<div class="mermaid-wrapper"></div>');
+                const pre = $('<pre class="mermaid"></pre>').text(mermaidText);
+                container.append(pre);
+                $("#mermaid-container").html('<div id="mermaid-error"></div>');
+                $("#mermaid-container").append(container);
+                
+                // Double-check the mermaid text for any remaining apostrophes
+                const finalText = pre.text();
+                if (finalText.includes("'")) {
+                    console.error("WARNING: Apostrophes still present in final Mermaid text!");
+                    pre.text(finalText.replace(/'/g, ""));
+                }
+                
+                // Render the diagram
+                renderMermaidDiagram();
+            }
+            
+            // Helper function to sanitize text for Mermaid
+            function sanitizeForMermaid(text) {
+                if (!text) return text;
+                
+                // Convert to string if not already
+                text = String(text);
+                
+                // Remove ALL types of apostrophes and quotes
+                text = removeAllApostrophes(text);
+                
+                // Replace other problematic characters that cause Mermaid syntax errors
+                // Keep capital letters and spaces intact
+                let sanitized = text
+                    // Replace other problematic characters
+                    .replace(/;/g, "")
+                    .replace(/:/g, "")
+                    .replace(/\//g, "-")
+                    .replace(/\\/g, "-")
+                    .replace(/\(/g, "")
+                    .replace(/\)/g, "")
+                    .replace(/,/g, "")
+                    .replace(/"/g, "")
+                    .replace(/\n/g, " ")
+                    .replace(/#/g, "")
+                    .replace(/\+/g, "")
+                    .replace(/%/g, "")
+                    .replace(/\*/g, "")
+                    .replace(/\^/g, "")
+                    .replace(/\|/g, "-")
+                    .replace(/</g, "")
+                    .replace(/>/g, "")
+                    .replace(/=/g, "")
+                    .replace(/\[/g, "")
+                    .replace(/\]/g, "")
+                    .replace(/\{/g, "")
+                    .replace(/\}/g, "")
+                    .replace(/\$/g, "")
+                    .replace(/@/g, "")
+                    .replace(/!/g, "")
+                    .replace(/~/g, "-")
+                    .replace(/`/g, "")
+                    .trim();
+                
+                // Double-check for apostrophes that might have been missed
+                sanitized = removeAllApostrophes(sanitized);
+                
+                // Truncate if too long (Mermaid can have issues with very long node names)
+                if (sanitized.length > 30) {
+                    sanitized = sanitized.substring(0, 27) + "...";
+                }
+                
+                // Ensure the text is not empty after sanitization
+                if (!sanitized) {
+                    sanitized = "node";
+                }
+                
+                return sanitized;
+            }
         });
     </script>
 </body>
